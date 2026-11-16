@@ -1,5 +1,5 @@
 import { analyzeFiles } from "@/lib/analysis";
-import { filesFromUrl, filesFromZip, type RawFile } from "@/lib/source";
+import { filesFromUrl } from "@/lib/source";
 
 export const maxDuration = 300;
 
@@ -18,19 +18,10 @@ export async function POST(req: Request) {
             };
 
             try {
-                let name = "";
-                let raw: RawFile[];
-                if (req.headers.get("content-type")?.includes("multipart/form-data")) {
-                    const file = (await req.formData()).get("file");
-                    if (!(file instanceof File)) throw new Error("No file received.");
-                    name = file.name.replace(/\.zip$/i, "");
-                    raw = filesFromZip(new Uint8Array(await file.arrayBuffer()));
-                } else {
-                    const { url } = await req.json();
-                    ({ name, files: raw } = await filesFromUrl(String(url ?? ""), onProgress));
-                }
+                const { url } = await req.json();
+                const { name, files } = await filesFromUrl(String(url ?? ""), onProgress);
                 send({ type: "progress", phase: "analyzing" });
-                send({ type: "done", name, files: analyzeFiles(raw) });
+                send({ type: "done", name, files: analyzeFiles(files) });
             } catch (e) {
                 send({ type: "error", error: e instanceof Error ? e.message : "Scan failed." });
             } finally {

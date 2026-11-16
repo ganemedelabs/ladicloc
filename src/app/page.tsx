@@ -2,6 +2,7 @@
 
 import Dashboard from "@/components/dashboard";
 import ThemeToggle from "@/components/theme-toggle";
+import { analyzeZip } from "@/lib/analysis/analyze-zip";
 import { groupKey, summarize } from "@/lib/summary";
 import { buildTree } from "@/lib/tree";
 import { FileStat, GroupBy } from "@/lib/types";
@@ -20,7 +21,7 @@ function CurrentYear() {
 }
 
 type Progress = {
-    phase: "uploading" | "downloading" | "analyzing";
+    phase: "downloading" | "analyzing";
     loaded?: number;
     total?: number;
 };
@@ -38,9 +39,10 @@ function formatBytes(n: number) {
 
 function progressLabel(p: Progress) {
     if (p.phase === "analyzing") return "Analyzing files…";
-    const verb = p.phase === "uploading" ? "Uploading" : "Downloading";
-    if (p.loaded == null) return `${verb}…`;
-    return p.total ? `${verb} ${formatBytes(p.loaded)} / ${formatBytes(p.total)}` : `${verb} ${formatBytes(p.loaded)}`;
+    if (p.loaded == null) return "Downloading…";
+    return p.total
+        ? `Downloading ${formatBytes(p.loaded)} / ${formatBytes(p.total)}`
+        : `Downloading ${formatBytes(p.loaded)}`;
 }
 
 export default function Page() {
@@ -56,17 +58,24 @@ export default function Page() {
     const [progress, setProgress] = useState<Progress | null>(null);
     const [dragging, setDragging] = useState(false);
 
-    const scan = (targetUrl: string, body: XMLHttpRequestBodyInit, headers?: Record<string, string>) => {
+    const applyResult = (nextName: string, nextFiles: FileStat[], nextUrl: string) => {
+        setFiles(nextFiles);
+        setName(nextName);
+        setUrl(nextUrl);
+        setOff(new Set());
+        setOffLangs(new Set());
+        setOpen(new Set());
+    };
+
+    const scan = (targetUrl: string) => {
         setLoading(true);
         setError("");
-        setProgress({
-            phase: body instanceof FormData ? "uploading" : "downloading",
-        });
+        setProgress({ phase: "downloading" });
 
         return new Promise<void>((resolve) => {
             const xhr = new XMLHttpRequest();
             xhr.open("POST", "/api/scan");
-            for (const [k, v] of Object.entries(headers ?? {})) xhr.setRequestHeader(k, v);
+            xhr.setRequestHeader("Content-Type", "application/json");
 
             let seen = 0;
             let finished = false;
@@ -74,22 +83,13 @@ export default function Page() {
             const handle = (line: string) => {
                 const msg = JSON.parse(line);
                 if (msg.type === "progress") {
-                    setProgress({
-                        phase: msg.phase,
-                        loaded: msg.loaded,
-                        total: msg.total,
-                    });
+                    setProgress({ phase: msg.phase, loaded: msg.loaded, total: msg.total });
                 } else if (msg.type === "error") {
                     finished = true;
                     setError(msg.error);
                 } else if (msg.type === "done") {
                     finished = true;
-                    setFiles(msg.files);
-                    setName(msg.name);
-                    setUrl(targetUrl);
-                    setOff(new Set());
-                    setOffLangs(new Set());
-                    setOpen(new Set());
+                    applyResult(msg.name, msg.files, targetUrl);
                 }
             };
 
@@ -101,10 +101,12 @@ export default function Page() {
                 seen = end + 1;
             };
 
-            xhr.upload.onprogress = (e) =>
-                e.lengthComputable && setProgress({ phase: "uploading", loaded: e.loaded, total: e.total });
             xhr.onprogress = drain;
             xhr.onload = () => {
+                if (xhr.status !== 200) {
+                    setError(`Scan failed (HTTP ${xhr.status}).`);
+                    return;
+                }
                 drain();
                 if (!finished) setError("Scan failed.");
             };
@@ -114,18 +116,26 @@ export default function Page() {
                 setProgress(null);
                 resolve();
             };
-            xhr.send(body);
+            xhr.send(JSON.stringify({ url: targetUrl }));
         });
     };
 
-    const scanZip = (file: File) => {
+    const scanZip = async (file: File) => {
         if (!file.name.toLowerCase().endsWith(".zip")) {
             setError("Only .zip archives are supported.");
             return;
         }
-        const fd = new FormData();
-        fd.append("file", file);
-        scan("", fd);
+        setLoading(true);
+        setError("");
+        setProgress({ phase: "analyzing" });
+        try {
+            applyResult(file.name.replace(/\.zip$/i, ""), await analyzeZip(file), "");
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Could not read that zip file.");
+        } finally {
+            setLoading(false);
+            setProgress(null);
+        }
     };
 
     useEffect(() => {
@@ -255,10 +265,7 @@ export default function Page() {
                         className="flex flex-wrap items-stretch gap-3"
                         onSubmit={(e) => {
                             e.preventDefault();
-                            if (url.trim())
-                                scan(url, JSON.stringify({ url }), {
-                                    "Content-Type": "application/json",
-                                });
+                            if (url.trim()) scan(url);
                         }}
                     >
                         <div className="relative min-w-0 flex-[1_1_320px]">

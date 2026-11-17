@@ -2,12 +2,12 @@
 
 import Dashboard from "@/components/dashboard";
 import ThemeToggle from "@/components/theme-toggle";
-import { analyzeZip } from "@/lib/analysis/analyze-zip";
+import { analyzeArchive } from "@/lib/analysis/analyze-archive";
 import { groupKey, summarize } from "@/lib/summary";
 import { buildTree } from "@/lib/tree";
 import { FileStat, GroupBy } from "@/lib/types";
 import Image from "next/image";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 const subscribe = () => () => {};
 
@@ -120,23 +120,31 @@ export default function Page() {
         });
     };
 
-    const scanZip = async (file: File) => {
-        if (!file.name.toLowerCase().endsWith(".zip")) {
-            setError("Only .zip archives are supported.");
+    const scanArchive = useCallback(async (file: File) => {
+        const lowerName = file.name.toLowerCase();
+        if (
+            !lowerName.endsWith(".zip") &&
+            !lowerName.endsWith(".tar") &&
+            !lowerName.endsWith(".tar.gz") &&
+            !lowerName.endsWith(".tgz") &&
+            !lowerName.endsWith(".gz")
+        ) {
+            setError("Only .zip, .tar, .tgz, and .gz archives are supported.");
             return;
         }
         setLoading(true);
         setError("");
         setProgress({ phase: "analyzing" });
         try {
-            applyResult(file.name.replace(/\.zip$/i, ""), await analyzeZip(file), "");
+            const cleanName = file.name.replace(/\.(tar\.gz|tgz|zip|tar|gz)$/i, "");
+            applyResult(cleanName, await analyzeArchive(file), "");
         } catch (e) {
-            setError(e instanceof Error ? e.message : "Could not read that zip file.");
+            setError(e instanceof Error ? e.message : "Could not read that archive file.");
         } finally {
             setLoading(false);
             setProgress(null);
         }
-    };
+    }, []);
 
     useEffect(() => {
         let depth = 0;
@@ -165,7 +173,7 @@ export default function Page() {
             setDragging(false);
             if (loading) return;
             const f = e.dataTransfer?.files?.[0];
-            if (f) scanZip(f);
+            if (f) scanArchive(f);
         };
 
         window.addEventListener("dragenter", onEnter);
@@ -179,7 +187,7 @@ export default function Page() {
             window.removeEventListener("drop", onDrop);
             setDragging(false);
         };
-    }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [loading, scanArchive]);
 
     const changeGroupBy = (g: GroupBy) => {
         setGroupBy(g);
@@ -225,7 +233,7 @@ export default function Page() {
                             <line x1="12" y1="3" x2="12" y2="15" />
                         </svg>
                         <p className="text-ink text-lg font-semibold">
-                            {loading ? "Scan in progress" : "Drop your .zip to analyze"}
+                            {loading ? "Scan in progress" : "Drop your archive to analyze"}
                         </p>
                         <p className="text-soft text-sm">
                             {loading
@@ -256,6 +264,14 @@ export default function Page() {
                             Analyze lines of code, comments, and blank space across any public Git repository or local{" "}
                             <code className="border-line bg-panel text-ink rounded-md border px-1.5 py-0.5 font-mono text-xs font-semibold">
                                 .zip
+                            </code>
+                            {" / "}
+                            <code className="border-line bg-panel text-ink rounded-md border px-1.5 py-0.5 font-mono text-xs font-semibold">
+                                .tar
+                            </code>
+                            {" / "}
+                            <code className="border-line bg-panel text-ink rounded-md border px-1.5 py-0.5 font-mono text-xs font-semibold">
+                                .tgz
                             </code>{" "}
                             archive with instantaneous depth.
                         </p>
@@ -319,14 +335,14 @@ export default function Page() {
                                 <polyline points="17 8 12 3 7 8" />
                                 <line x1="12" y1="3" x2="12" y2="15" />
                             </svg>
-                            Upload .zip
+                            Upload archive
                             <input
                                 type="file"
-                                accept=".zip"
+                                accept=".zip,.tar,.tar.gz,.tgz,.gz"
                                 hidden
                                 onChange={(e) => {
                                     const f = e.target.files?.[0];
-                                    if (f) scanZip(f);
+                                    if (f) scanArchive(f);
                                     e.target.value = "";
                                 }}
                             />

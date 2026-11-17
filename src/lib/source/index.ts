@@ -1,10 +1,10 @@
 import type { RawFile } from "../types";
+import { filesFromArchive } from "./archive";
 import { readWithProgress, type ProgressFn } from "./download";
 import { cloneRepo } from "./git";
 import { archiveUrl, assertPublic, repoName } from "./url";
-import { filesFromZip } from "./zip";
 
-export { filesFromZip };
+export { filesFromArchive };
 export type { RawFile };
 
 export async function filesFromUrl(raw: string, onProgress?: ProgressFn): Promise<{ name: string; files: RawFile[] }> {
@@ -12,10 +12,10 @@ export async function filesFromUrl(raw: string, onProgress?: ProgressFn): Promis
     assertPublic(u);
     const name = repoName(u);
 
-    const zip = archiveUrl(u);
-    if (zip) {
-        const res = await fetch(zip);
-        if (res.ok) return { name, files: filesFromZip(await readWithProgress(res, onProgress)) };
+    const archive = archiveUrl(u);
+    if (archive) {
+        const res = await fetch(archive);
+        if (res.ok) return { name, files: filesFromArchive(await readWithProgress(res, onProgress)) };
     }
     return { name, files: await cloneRepo(u.href) };
 }

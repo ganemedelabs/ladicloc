@@ -1,4 +1,5 @@
 import { ThemeProvider } from "@/components/theme-provider";
+import { Analytics } from "@vercel/analytics/next";
 import type { Metadata } from "next";
 import { JetBrains_Mono } from "next/font/google";
 import "./globals.css";
@@ -19,10 +20,7 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-    title: {
-        default: "Ladicloc — Instant Code & Repository Statistics",
-        template: "%s | Ladicloc",
-    },
+    title: "Ladicloc",
     description:
         "Analyze lines of code, comments, and blank space across any public Git repository or local zip archive.",
     keywords: ["line counter", "cloc", "code metrics", "repository analyzer", "git stats"],
@@ -38,6 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </head>
             <body>
                 <ThemeProvider>{children}</ThemeProvider>
+                <Analytics />
             </body>
         </html>
     );
